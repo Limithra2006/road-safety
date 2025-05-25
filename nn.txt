@@ -1,0 +1,146 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import StandardScaler
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+import numpy as np
+import time
+
+# 1. Load dataset - Already preprocessed and encoded
+file_path = "/content/road-safety/data/cleaned_RTA_dataset.csv"
+df = pd.read_csv(file_path)
+print("Dataset loaded, shape:", df.shape)
+
+# 2. Visualizations
+plt.figure(figsize=(8, 6))
+sns.countplot(x='SeverityEncoded', data=df)
+plt.title('Distribution of Accident Severity')
+plt.xlabel('Severity Encoded (0=Slight, 1=Serious, 2=Fatal)')
+plt.ylabel('Number of Accidents')
+plt.show()
+time.sleep(2)
+
+plt.figure(figsize=(12, 6))
+top_causes = [col for col in df.columns if 'Cause_of_accident' in col]
+df[top_causes].sum().sort_values(ascending=False).head(10).plot(kind='bar')
+plt.title('Top 10 Causes of Accidents (Encoded)')
+plt.xlabel('Cause of Accident')
+plt.ylabel('Number of Accidents')
+plt.xticks(rotation=90)
+plt.show()
+time.sleep(2)
+
+# 3. Prepare data for modeling
+X = df.drop(['SeverityEncoded'], axis=1)
+y = df['SeverityEncoded']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 4. Random Forest Classifier
+print("\nTraining Random Forest model...")
+rf_model = RandomForestClassifier(random_state=42, n_estimators=100)
+rf_model.fit(X_train, y_train)
+y_pred_rf = rf_model.predict(X_test)
+rf_accuracy = accuracy_score(y_test, y_pred_rf)
+
+print(f"\nRandom Forest Accuracy: {rf_accuracy:.2f}")
+print("Classification Report:")
+print(classification_report(y_test, y_pred_rf, target_names=['Slight Injury', 'Serious Injury', 'Fatal Injury']))
+
+# 5. Neural Network model
+print("\nTraining Neural Network model...")
+
+# Scale features
+scaler = StandardScaler()
+X_train_nn = scaler.fit_transform(X_train)
+X_test_nn = scaler.transform(X_test)
+
+nn_model = Sequential([
+    Dense(128, activation='relu', input_shape=(X_train.shape[1],)),
+    Dropout(0.3),
+    Dense(64, activation='relu'),
+    Dropout(0.3),
+    Dense(32, activation='relu'),
+    Dense(3, activation='softmax')  # 3 classes
+])
+
+nn_model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+history = nn_model.fit(X_train_nn, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=1)
+
+nn_loss, nn_accuracy = nn_model.evaluate(X_test_nn, y_test, verbose=0)
+print(f"\nNeural Network Accuracy: {nn_accuracy:.2f}")
+
+# Plot training history
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.title('Model Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Model Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.show()
+
+# 6. Sample prediction with user input
+print("\n--- Enter details for accident prediction ---")
+vehicles_involved = int(input("Number of vehicles involved: "))
+casualties = int(input("Number of casualties: "))
+hour = int(input("Hour of accident (0-23): "))
+day_of_week = input("Day of week (Monday/Tuesday/...): ").capitalize()
+cause_of_accident = input("Cause of accident (Overtaking/Overspeed/Changing lane/...): ").capitalize()
+
+# Build input dict by setting all columns to 0 initially
+sample_input = {col: 0 for col in X.columns}
+
+# Fill user-provided values into correct columns
+sample_input['Number_of_vehicles_involved'] = vehicles_involved
+sample_input['Number_of_casualties'] = casualties
+sample_input['Hour'] = hour
+
+# Set day of week column
+day_column = f'Day_of_week_{day_of_week}'
+if day_column in X.columns:
+    sample_input[day_column] = 1
+else:
+    print(f"Warning: {day_column} not found in columns.")
+
+# Set cause of accident column
+cause_column = f'Cause_of_accident_{cause_of_accident}'
+if cause_column in X.columns:
+    sample_input[cause_column] = 1
+else:
+    print(f"Warning: {cause_column} not found in columns.")
+
+# Create DataFrame and scale
+sample_df = pd.DataFrame([sample_input])
+sample_scaled = scaler.transform(sample_df)
+
+# Predict using both models
+rf_pred_sample = rf_model.predict(sample_df)
+nn_pred_sample = nn_model.predict(sample_scaled)
+
+print("\nSample Predictions based on your input:")
+print(f"Random Forest: {['Slight Injury', 'Serious Injury', 'Fatal Injury'][rf_pred_sample[0]]}")
+print(f"Neural Network: {['Slight Injury', 'Serious Injury', 'Fatal Injury'][np.argmax(nn_pred_sample)]}")
+
+# 7. Insights
+print("\nRoad Safety Insights:")
+print("1. The encoded dataset shows significant patterns that can help predict accident severity.")
+print("2. Using both Random Forest and Neural Network provides robust comparative analysis.")
+print("3. The most common causes and time periods should be analyzed for awareness campaigns and preventive measures.")
